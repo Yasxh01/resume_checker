@@ -1,5 +1,5 @@
 # ============================================================
-# backend/main.py — FastAPI Application Server
+# main.py — FastAPI Application Server
 # ============================================================
 # PURPOSE:
 #   This is the central API server. It exposes REST endpoints
@@ -292,9 +292,10 @@ async def evaluate_candidates(request: EvaluationRequest):
     # ----------------------------------------------------------
     if request.generate_verdicts:
         logger.info("Evaluation complete. Generating verdicts...")
-        for res in results_sorted:
+        
+        async def _generate_verdict_single(res):
             try:
-                v = generate_verdict(
+                v = await generate_verdict(
                     candidate_name      = res.get("name", "Unknown"),
                     scores              = res,
                     jd_text             = request.jd_text,
@@ -307,6 +308,9 @@ async def evaluate_candidates(request: EvaluationRequest):
                 logger.error(f"Error generating verdict for {res.get('name')}: {e}")
                 res["verdict"] = {"verdict": "Error generating verdict.", "recommendation": "Error", "source": "error"}
 
+        verdict_tasks = [_generate_verdict_single(r) for r in results_sorted]
+        await asyncio.gather(*verdict_tasks)
+        
     # Store for CSV export
     _last_results = results_sorted
 
@@ -379,7 +383,7 @@ async def upload_resume(file: UploadFile = File(...)):
 async def get_verdict(request: VerdictRequest):
     """Generates LLM verdict for a single candidate."""
     try:
-        v = generate_verdict(
+        v = await generate_verdict(
             candidate_name      = request.candidate_name,
             scores              = request.scores,
             jd_text             = request.jd_text,
@@ -401,7 +405,7 @@ async def get_interview_questions(request: InterviewQuestionsRequest):
         matched = request.candidate.get("matched_skills", [])
         missing = request.candidate.get("missing_skills", [])
         
-        questions = generate_interview_questions(
+        questions = await generate_interview_questions(
             candidate_name = request.candidate.get("name", "Unknown"),
             matched_skills = matched,
             missing_skills = missing,
