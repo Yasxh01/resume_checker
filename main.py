@@ -22,6 +22,7 @@ import io
 import csv
 import json
 import logging
+
 from typing import List, Optional
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
@@ -29,15 +30,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-# Import scoring layers
-from layer_1_semantic   import calculate_semantic_match
-from layer_2_taxonomy   import calculate_taxonomy_score
-from layer_3_experience import calculate_experience_score
-from layer_4_projects   import calculate_project_relevance
-from layer_5_behavioral import calculate_github_score
-from bias_detector      import detect_bias_flags
-from llm_verdict        import generate_verdict
-from data               import job_descriptions, candidate_profiles, DEFAULT_JD
+
+
+from backend.layer_1_semantic   import calculate_semantic_match
+from backend.layer_2_taxonomy   import calculate_taxonomy_score
+from backend.layer_3_experience import calculate_experience_score
+from backend.layer_4_projects   import calculate_project_relevance
+from backend.layer_5_behavioral import calculate_github_score
+from backend.bias_detector      import detect_bias_flags
+from backend.llm_verdict        import generate_verdict
+from backend.data               import job_descriptions, candidate_profiles, DEFAULT_JD
 
 # PDF parsing
 try:
@@ -225,10 +227,12 @@ async def evaluate_candidates(request: EvaluationRequest):
         missing_skills  = taxonomy_result["missing"]
 
         # Layer 3: Experience Score
-        score_l3 = calculate_experience_score(
+        exp_result = calculate_experience_score(
             candidate_years = candidate.years_of_experience,
             required_years  = request.required_years,
+            resume_text =candidate.resume_text,
         )
+        score_l3=exp_result["score"]
 
         # Layer 4: Project Relevance
         score_l4 = calculate_project_relevance(
@@ -263,6 +267,7 @@ async def evaluate_candidates(request: EvaluationRequest):
             "matched_skills"     : matched_skills,
             "missing_skills"     : missing_skills,
             "github_data"        : github_result,
+            "experience_detail"  : exp_result,
             "years_of_experience": candidate.years_of_experience,
             "required_years"     : request.required_years,
             "skills"             : candidate.skills,
@@ -271,7 +276,6 @@ async def evaluate_candidates(request: EvaluationRequest):
 
     # ----------------------------------------------------------
     # SORT BY COMPOSITE SCORE (Highest First)
-    # ----------------------------------------------------------
     results_sorted = sorted(results, key=lambda x: x["composite"], reverse=True)
 
     # Assign rank
@@ -392,7 +396,7 @@ async def get_verdict(request: VerdictRequest):
 async def get_interview_questions(request: InterviewQuestionsRequest):
     """Generates personalized LLM interview questions for a candidate."""
     try:
-        from llm_interview import generate_interview_questions
+        from backend.llm_interview import generate_interview_questions
         # Determine matched/missing skills based on the candidate's scores
         matched = request.candidate.get("matched_skills", [])
         missing = request.candidate.get("missing_skills", [])
@@ -451,6 +455,9 @@ async def export_csv():
             ", ".join(r.get("matched_skills", [])),
             ", ".join(r.get("missing_skills", [])),
             r.get("years_of_experience", ""),
+            r.get("extracted_years",    ""),
+            r.get("seniority_level",    ""),
+            r.get("extraction_method",  ""),
             verdict_rec.get("recommendation", ""),
         ])
 
