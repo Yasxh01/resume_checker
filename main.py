@@ -22,6 +22,7 @@ import io
 import csv
 import json
 import logging
+import asyncio
 
 from typing import List, Optional
 
@@ -483,7 +484,7 @@ from fastapi.responses import FileResponse
 import os
 
 # Calculate absolute path to frontend directory
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 
 if os.path.exists(FRONTEND_DIR):
@@ -500,7 +501,7 @@ else:
 if __name__ == "__main__":
     import uvicorn
     print("\n========================================================")
-    print("🚀 RecruitIQ Server is starting up...")
-    print("👉 Open your browser to: http://localhost:8000")
+    print(" RecruitIQ Server is starting up...")
+    print(" Open your browser to: http://localhost:8000")
     print("========================================================\n")
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
