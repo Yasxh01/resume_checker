@@ -1,11 +1,9 @@
 # ============================================================
 # backend/layer_2_taxonomy.py — Skill Taxonomy Engine
 # ============================================================
-# UPDATED: Now returns matched AND missing skills for the
-# Score Explanation Panel in the frontend.
-# ============================================================
-
 import logging
+import difflib
+from functools import lru_cache
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,6 +20,14 @@ TAXONOMY_MAP = {
     "google cloud platform" : "gcp",
     "microsoft azure"       : "azure",
     "azure cloud"           : "azure",
+    "ec2"                   : "aws",
+    "s3"                    : "aws",
+    "lambda"                : "aws",
+    "cloudformation"        : "aws",
+    "cloud functions"       : "gcp",
+    "compute engine"        : "gcp",
+    "bigquery"              : "gcp",
+    "azure functions"       : "azure",
 
     # Databases
     "postgres"              : "postgresql",
@@ -34,6 +40,12 @@ TAXONOMY_MAP = {
     "microsoft sql server"  : "mssql",
     "elastic"               : "elasticsearch",
     "es"                    : "elasticsearch",
+    "mysql server": "mysql",
+    "mariadb": "mysql",
+    "redis cache": "redis",
+    "dynamodb": "dynamodb",
+    "firebase firestore": "firestore",
+    "firestore": "firestore",
 
     # Frontend
     "reactjs"               : "react",
@@ -44,7 +56,14 @@ TAXONOMY_MAP = {
     "nextjs"                : "nextjs",
     "next.js"               : "nextjs",
     "angularjs"             : "angular",
-    "angular.js"            : "angular",
+    "react native": "reactnative",
+    "react-native": "reactnative",
+    "html5": "html",
+    "css3": "css",
+    "tailwind css": "tailwind",
+    "tailwindcss": "tailwind",
+    "bootstrap 5": "bootstrap",
+    "angular.js" : "angular",
 
     # Backend
     "django rest framework" : "django",
@@ -59,6 +78,15 @@ TAXONOMY_MAP = {
     "spring framework"      : "spring",
     "node"                  : "nodejs",
     "node.js"               : "nodejs",
+    "fastapi": "fastapi",
+    "rest api": "rest",
+    "restful api": "rest",
+    "restful services": "rest",
+    "spring boot": "springboot",
+    "spring mvc": "spring",
+    ".net": "dotnet",
+    "asp.net": "dotnet",
+    "asp.net core": "dotnet",
 
     # Languages
     "py"                    : "python",
@@ -74,6 +102,13 @@ TAXONOMY_MAP = {
     "cplusplus"             : "cpp",
     "golang"                : "go",
     "go lang"               : "go",
+    "c sharp": "csharp",
+    "c#": "csharp",
+    "cpp": "cpp",
+    "java 8": "java",
+    "java 11": "java",
+    "java 17": "java",
+    "typescript": "typescript",
 
     # DevOps
     "docker container"      : "docker",
@@ -88,6 +123,13 @@ TAXONOMY_MAP = {
     "jenkins"               : "cicd",
     "infra as code"         : "terraform",
     "iac"                   : "terraform",
+    "github actions": "github-actions",
+    "github workflow": "github-actions",
+    "docker compose": "docker",
+    "kubernetes cluster": "kubernetes",
+    "helm": "helm",
+    "ansible": "ansible",
+    "terraform clud": "terraform",
 
     # ML/Data
     "scikit learn"          : "scikitlearn",
@@ -95,20 +137,50 @@ TAXONOMY_MAP = {
     "scikit-learn"          : "scikitlearn",
     "tf"                    : "tensorflow",
     "torch"                 : "pytorch",
+    "numpy": "numpy",
+    "np": "numpy",
+    "pandas": "pandas",
+    "pd": "pandas",
+    "opencv": "opencv",
+    "huggingface": "huggingface",
+    "hugging face": "huggingface",
+    "langchain": "langchain",
+    "llm": "llm",
+    "genai": "generative ai",
+    "generative ai": "generative ai",
+    "bert": "transformers",
+    "transformers": "transformers",
 
     # Version Control
     "github"                : "git",
     "gitlab"                : "git",
     "bitbucket"             : "git",
     "version control"       : "git",
+    "git hub": "git",
+    "gitlab ci": "git",
 }
 
-
+@lru_cache(maxsize=512)
 def _normalize_skill(skill: str) -> str:
     """Normalize a skill string to its canonical form."""
+    if not skill:
+        return ""
     cleaned = skill.lower().strip()
     return TAXONOMY_MAP.get(cleaned, cleaned)
 
+def _fuzzy_match(skill: str, candidate_skills: set, cutoff: float = 0.90) -> bool:
+    """
+    Returns True if a close skill match exists.
+    Used only when exact matching fails.
+    """
+    return bool(
+        difflib.get_close_matches(
+            skill,
+            candidate_skills,
+            n=1,
+            cutoff=cutoff,
+        )
+    )
 
 def calculate_taxonomy_score(jd_skills: list, candidate_skills: list) -> dict:
     """
@@ -121,8 +193,8 @@ def calculate_taxonomy_score(jd_skills: list, candidate_skills: list) -> dict:
     - normalized_jd (list): JD skills after normalization
     - normalized_candidate (list): Candidate skills after normalization
     """
-    # Zero-division safety
-    if not jd_skills or len(jd_skills) == 0:
+    
+    if not jd_skills:
         return {
             "score": 100.0,
             "matched": [],
@@ -131,7 +203,7 @@ def calculate_taxonomy_score(jd_skills: list, candidate_skills: list) -> dict:
             "normalized_candidate": [],
         }
 
-    if not candidate_skills or len(candidate_skills) == 0:
+    if not candidate_skills:
         normalized_jd = [_normalize_skill(s) for s in jd_skills]
         return {
             "score": 0.0,
@@ -148,12 +220,21 @@ def calculate_taxonomy_score(jd_skills: list, candidate_skills: list) -> dict:
     # Compute intersection and difference
     matched_set = normalized_jd_set & normalized_candidate_set
     missing_set = normalized_jd_set - normalized_candidate_set
+    for skill in list(missing_set):
+
+        if _fuzzy_match(skill, normalized_candidate_set):
+            matched_set.add(skill)
+            missing_set.remove(skill)
+
 
     # Calculate score
     score = (len(matched_set) / len(normalized_jd_set)) * 100
 
     logger.info(
-        f"Layer 2: {len(matched_set)}/{len(normalized_jd_set)} skills matched = {round(score, 2)}%"
+    "Layer 2: %d/%d skills matched (%.2f%%)",
+    len(matched_set),
+    len(normalized_jd_set),
+    score,
     )
 
     return {
