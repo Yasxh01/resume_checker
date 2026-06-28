@@ -250,7 +250,7 @@ async def evaluate_candidates(request: EvaluationRequest):
         score_l4=project_result["score"]
 
         # Layer 5: GitHub Behavioral Score
-        github_result = calculate_github_score(
+        github_result =await calculate_github_score(
     github_username=candidate.github_username or ""
 )
         score_l5 = github_result["score"]
