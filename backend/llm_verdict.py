@@ -26,22 +26,23 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Attempt to import and initialize the Gemini client
-_gemini_available = False
+_groq_available = False
+_client=None
 
 try:
-    from google import genai
-    api_key = os.getenv("GEMINI_API_KEY", "")
+    from groq import AsyncGroq
+    api_key = os.getenv("GROQ_API_KEY", "")
     if api_key:
-        _client = genai.Client(api_key=api_key)
-        _gemini_available = True
-        logger.info("LLM Verdict: Gemini client initialized successfully. ✓")
+        _client = AsyncGroq(api_key=api_key)
+        _groq_available = True
+        logger.info("LLM Verdict: Groq client initialized successfully. ✓")
     else:
         logger.warning(
-            "LLM Verdict: GEMINI_API_KEY not found in environment. "
+            "LLM Verdict: GROQ_API_KEY not found in environment. "
             "Will use rule-based fallback verdicts."
         )
 except ImportError:
-    logger.warning("LLM Verdict: google-genai package not installed. Using fallback.")
+    logger.warning("LLM Verdict: groq package not installed. Using fallback.")
 
 
 async def generate_verdict(
@@ -86,71 +87,91 @@ async def generate_verdict(
     # ----------------------------------------------------------
     # ATTEMPT LLM VERDICT
     # ----------------------------------------------------------
-    use_gemini = _gemini_available
+    use_groq = _groq_available
     client = None
-    if _gemini_available:
+    if _groq_available:
         try:
-            client = genai.Client(api_key=api_key if api_key else os.getenv("GEMINI_API_KEY", ""))
-            use_gemini = True
+            client = AsyncGroq(api_key=api_key if api_key else os.getenv("GROQ_API_KEY", ""))
+            use_groq = True
             if api_key:
                 logger.info("LLM Verdict: Using provided dynamic API Key.")
         except Exception as e:
             logger.warning(f"LLM Verdict: Failed to configure dynamic key: {e}")
-            use_gemini = False
+            use_groq = False
             
-    if use_gemini:
+    if use_groq:
         try:
             prompt = f"""You are a senior technical recruiter with 15 years of experience 
-at a top-tier technology company. Analyze this candidate evaluation and provide a concise verdict.
+            at a top-tier technology company. Analyze this candidate evaluation and provide a concise verdict.
+            
+            JOB DESCRIPTION:
+            {jd_text}
+            
+            CANDIDATE: {candidate_name}
+            SKILLS: {skills_str}
+            EXPERIENCE: {years_of_experience} years
+            AI SCORING BREAKDOWN: {scores_summary}
+            
+            Provide:
+            1. A 2-3 sentence professional hiring recommendation that references specific scores and skills.
+            2. A final recommendation label — exactly one of: "Strong Hire", "Consider", or "Pass"
+            
+            Format your response exactly like this (do not use bolding or markdown for the labels):
+            VERDICT: [your 2-3 sentence analysis]
+            RECOMMENDATION: [Strong Hire | Consider | Pass]
+            
+            Be specific, professional, and constructive. Reference actual numbers from the scoring."""
 
-JOB DESCRIPTION:
-{jd_text}
-
-CANDIDATE: {candidate_name}
-SKILLS: {skills_str}
-EXPERIENCE: {years_of_experience} years
-AI SCORING BREAKDOWN: {scores_summary}
-
-Provide:
-1. A 2-3 sentence professional hiring recommendation that references specific scores and skills.
-2. A final recommendation label — exactly one of: "Strong Hire", "Consider", or "Pass"
-
-Format your response exactly like this (do not use bolding or markdown for the labels):
-VERDICT: [your 2-3 sentence analysis]
-RECOMMENDATION: [Strong Hire | Consider | Pass]
-
-Be specific, professional, and constructive. Reference actual numbers from the scoring."""
-
-            response = await client.aio.models.generate_content(
-                model='gemini-1.5-flash',
-                contents=prompt
+    
+            response = await _client.chat.completions.create(
+              model="llama-3.3-70b-versatile",
+              messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert technical recruiter."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+                ],
+                temperature=0.3,
+                max_tokens=350,
             )
-            response_text = response.text.strip()
 
-            # Parse the structured response
-            verdict        = ""
+            response_text = response.choices[0].message.content.strip()
+
+            verdict = ""
             recommendation = "Consider"
 
             for line in response_text.split("\n"):
+                line = line.strip()
+
                 if line.startswith("VERDICT:"):
                     verdict = line.replace("VERDICT:", "").strip()
+
                 elif line.startswith("RECOMMENDATION:"):
-                    rec_raw        = line.replace("RECOMMENDATION:", "").strip()
-                    recommendation = rec_raw if rec_raw in ["Strong Hire", "Consider", "Pass"] else "Consider"
-
+                    rec_raw = line.replace("RECOMMENDATION:", "").strip()
+    
+                    if rec_raw in ["Strong Hire", "Consider", "Pass"]:
+                        recommendation = rec_raw
+    
             if not verdict:
-                verdict = response_text  # Fallback: use full response as verdict
-
-            logger.info(f"LLM Verdict: Generated for {candidate_name} → {recommendation}")
+                verdict = response_text
 
             return {
-                "verdict"       : verdict,
+                "verdict": verdict,
                 "recommendation": recommendation,
-                "source"        : "llm",
+                "source": "llm",
             }
 
         except Exception as e:
-            logger.warning(f"LLM Verdict: API call failed — {e}. Using rule-based fallback.")
+          logger.warning(
+            f"LLM Verdict: Groq API failed - {e}. Using rule-based fallback."
+        )
+
+
+   
 
     # ----------------------------------------------------------
     # RULE-BASED FALLBACK VERDICT

@@ -35,7 +35,9 @@ pandas==2.2.2
 
 # Python-dotenv: Load environment variables from .env file
 python-dotenv==1.0.1
+
 python-dateutil>=2.9.0
 spacy>=3.7.0
 httpx>=0.27.0
+
 groq
