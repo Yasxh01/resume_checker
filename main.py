@@ -23,6 +23,11 @@ import csv
 import json
 import logging
 import asyncio
+from pathlib import Path
+from dotenv import load_dotenv
+
+ROOT_DIR = Path(__file__).resolve().parent
+load_dotenv(ROOT_DIR / ".env")
 
 from typing import List, Optional
 
@@ -236,15 +241,18 @@ async def evaluate_candidates(request: EvaluationRequest):
         score_l3=exp_result["score"]
 
         # Layer 4: Project Relevance
-        score_l4 = calculate_project_relevance(
+        project_result =await calculate_project_relevance(
             jd_text       = request.jd_text,
             projects_text = candidate.projects_text or "",
+            jd_skills=request.jd_skills,
+            github_username= candidate.github_username or "",
         )
+        score_l4=project_result["score"]
 
         # Layer 5: GitHub Behavioral Score
         github_result = calculate_github_score(
-            github_username = candidate.github_username or "",
-        )
+    github_username=candidate.github_username or ""
+)
         score_l5 = github_result["score"]
 
         # Composite Weighted Score
@@ -265,6 +273,7 @@ async def evaluate_candidates(request: EvaluationRequest):
             "score_l3"           : score_l3,
             "score_l4"           : score_l4,
             "score_l5"           : score_l5,
+            "project_data"       :project_result,
             "matched_skills"     : matched_skills,
             "missing_skills"     : missing_skills,
             "github_data"        : github_result,
@@ -440,7 +449,8 @@ async def export_csv():
     writer.writerow([
         "Rank", "Candidate", "Composite %",
         "Semantic %", "Taxonomy %", "Experience %",
-        "Projects %", "GitHub %",
+        "Projects %", "GitHub %","Repositories",
+        "Stars","Forks","Top Languages",
         "Matched Skills", "Missing Skills",
         "Years Experience", "Recommendation"
     ])
@@ -448,6 +458,7 @@ async def export_csv():
     # Data rows
     for r in _last_results:
         verdict_rec = r.get("verdict", {}) or {}
+        project=r.get("project_data") or {}
         writer.writerow([
             r.get("rank", ""),
             r.get("name", ""),
@@ -457,12 +468,15 @@ async def export_csv():
             r.get("score_l3", ""),
             r.get("score_l4", ""),
             r.get("score_l5", ""),
+            
+            project.get("repos_analysed", 0),
+            project.get("total_stars", 0),
+            project.get("total_forks", 0),
+            ", ".join(map(str,project.get("top_languages", []))),
             ", ".join(r.get("matched_skills", [])),
             ", ".join(r.get("missing_skills", [])),
             r.get("years_of_experience", ""),
-            r.get("extracted_years",    ""),
-            r.get("seniority_level",    ""),
-            r.get("extraction_method",  ""),
+            
             verdict_rec.get("recommendation", ""),
         ])
 
