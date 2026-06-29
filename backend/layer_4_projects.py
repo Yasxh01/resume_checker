@@ -335,6 +335,10 @@ def _calculate_code_quality_score(repos: list) -> dict:
         "recently_active"  : recently_active,
         "documentation_pct": round(doc_pct * 100, 1),
         "activity_pct"     : round(active_pct * 100, 1),
+        "star_score"       : round(star_score,   1),
+        "fork_score"       : round(fork_score,   1),
+        "doc_score"        : round(doc_score,    1),
+        "active_score"     : round(active_score, 1),
     }
 
 
@@ -450,6 +454,13 @@ async def calculate_project_relevance(
                 "all_topics"        : skill_result["all_topics"],
                 "total_stars"       : quality_result["total_stars"],
                 "total_forks"       : quality_result["total_forks"],
+                "documented_repos"  : quality_result["documented_repos"],
+                "recently_active"   : quality_result["recently_active"],
+                "repos_analysed"    : len(repos),
+                "star_score"        : quality_result["star_score"],
+                "fork_score"        : quality_result["fork_score"],
+                "doc_score"         : quality_result["doc_score"],
+                "active_score"      : quality_result["active_score"],
             }
         else:
             logger.warning(f"Layer 4: No repos found for '{username}'. Using semantic fallback.")
