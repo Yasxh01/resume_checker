@@ -41,18 +41,20 @@ async def generate_interview_questions(
     # ----------------------------------------------------------
     # ATTEMPT LLM GENERATION
     # ----------------------------------------------------------
-    use_gemini = _gemini_available
+    use_gemini = False
     client = None
-    if _gemini_available:
-        try:
-            client = genai.Client(api_key=api_key if api_key else os.getenv("GEMINI_API_KEY", ""))
+    try:
+        from google import genai
+        final_key = api_key if api_key else os.getenv("GEMINI_API_KEY", "")
+        if final_key:
+            client = genai.Client(api_key=final_key)
             use_gemini = True
             if api_key:
                 logger.info("LLM Interview: Using provided dynamic API Key.")
-        except Exception as e:
-            logger.warning(f"LLM Interview: Failed to configure dynamic key: {e}")
-            use_gemini = False
-
+    except ImportError:
+        logger.warning("LLM Interview: Failed to import google-genai.")
+    except Exception as e:
+        logger.warning(f"LLM Interview: Failed to configure dynamic key: {e}")
 
     if use_gemini:
         try:
@@ -84,7 +86,7 @@ Return valid JSON matching this exact structure:
 Do NOT wrap the JSON in markdown code blocks. Just output raw JSON.
 """
             response = await client.aio.models.generate_content(
-                model='gemini-1.5-flash',
+                model='gemini-2.5-flash',
                 contents=prompt
             )
             response_text = response.text.strip()
