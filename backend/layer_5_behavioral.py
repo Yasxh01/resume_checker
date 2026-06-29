@@ -34,7 +34,7 @@ import math
 import logging
 import asyncio
 import httpx
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 _github_cache = {}
@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 GITHUB_API_BASE  = "https://api.github.com"
 REQUEST_TIMEOUT  = 10
 NEUTRAL_SCORE    = 50.0
-RECENT_CUTOFF    = "2024-01-01"
+RECENT_CUTOFF = datetime.now(timezone.utc) - timedelta(days=365)
 
 # Signal weights (must sum to 1.0)
 WEIGHT_REPO_FOLLOWER  = 0.30
@@ -320,7 +320,13 @@ async def _score_code_quality(client: httpx.AsyncClient, username: str) -> dict:
     )
     recently_active  = sum(
         1 for r in repos
-        if r.get("updated_at", "") >= RECENT_CUTOFF and not r.get("fork", False)
+        if (
+            r.get("updated_at", "")
+             and datetime.fromisoformat(
+                 r["updated_at"].replace("Z","+00:00")
+             ) >= RECENT_CUTOFF
+               and not r.get("fork", False)
+        )
     )
 
     # Stars: log-scale (100 stars = max 30 pts)
