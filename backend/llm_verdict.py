@@ -26,23 +26,22 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Attempt to import and initialize the Gemini client
-_groq_available = False
-_client=None
+_gemini_available = False
 
 try:
-    from groq import AsyncGroq
-    api_key = os.getenv("GROQ_API_KEY", "")
+    from google import genai
+    api_key = os.getenv("GEMINI_API_KEY", "")
     if api_key:
-        _client = AsyncGroq(api_key=api_key)
-        _groq_available = True
-        logger.info("LLM Verdict: Groq client initialized successfully. ✓")
+        _client = genai.Client(api_key=api_key)
+        _gemini_available = True
+        logger.info("LLM Verdict: Gemini client initialized successfully. ✓")
     else:
         logger.warning(
-            "LLM Verdict: GROQ_API_KEY not found in environment. "
+            "LLM Verdict: GEMINI_API_KEY not found in environment. "
             "Will use rule-based fallback verdicts."
         )
 except ImportError:
-    logger.warning("LLM Verdict: groq package not installed. Using fallback.")
+    logger.warning("LLM Verdict: google-genai package not installed. Using fallback.")
 
 
 async def generate_verdict(
@@ -87,19 +86,22 @@ async def generate_verdict(
     # ----------------------------------------------------------
     # ATTEMPT LLM VERDICT
     # ----------------------------------------------------------
-    use_groq = _groq_available
+    use_gemini = False
     client = None
-    if _groq_available:
-        try:
-            client = AsyncGroq(api_key=api_key if api_key else os.getenv("GROQ_API_KEY", ""))
-            use_groq = True
+    try:
+        from google import genai
+        final_key = api_key if api_key else os.getenv("GEMINI_API_KEY", "")
+        if final_key:
+            client = genai.Client(api_key=final_key)
+            use_gemini = True
             if api_key:
                 logger.info("LLM Verdict: Using provided dynamic API Key.")
-        except Exception as e:
-            logger.warning(f"LLM Verdict: Failed to configure dynamic key: {e}")
-            use_groq = False
+    except ImportError:
+        logger.warning("LLM Verdict: Failed to import google-genai.")
+    except Exception as e:
+        logger.warning(f"LLM Verdict: Failed to configure dynamic key: {e}")
             
-    if use_groq:
+    if use_gemini:
         try:
             prompt = f"""You are a senior technical recruiter with 15 years of experience 
             at a top-tier technology company. Analyze this candidate evaluation and provide a concise verdict.
@@ -123,52 +125,37 @@ async def generate_verdict(
             Be specific, professional, and constructive. Reference actual numbers from the scoring."""
 
     
-            response = await _client.chat.completions.create(
-              model="llama-3.3-70b-versatile",
-              messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert technical recruiter."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-                ],
-                temperature=0.3,
-                max_tokens=350,
+            response = await client.aio.models.generate_content(
+              model="gemini-2.5-flash",
+              contents=prompt
             )
 
-            response_text = response.choices[0].message.content.strip()
+            response_text = response.text.strip()
 
-            verdict = ""
+            # Parse the structured response
+            verdict        = ""
             recommendation = "Consider"
 
             for line in response_text.split("\n"):
-                line = line.strip()
-
                 if line.startswith("VERDICT:"):
                     verdict = line.replace("VERDICT:", "").strip()
-
                 elif line.startswith("RECOMMENDATION:"):
-                    rec_raw = line.replace("RECOMMENDATION:", "").strip()
-    
-                    if rec_raw in ["Strong Hire", "Consider", "Pass"]:
-                        recommendation = rec_raw
-    
+                    rec_raw        = line.replace("RECOMMENDATION:", "").strip()
+                    recommendation = rec_raw if rec_raw in ["Strong Hire", "Consider", "Pass"] else "Consider"
+
             if not verdict:
-                verdict = response_text
+                verdict = response_text  # Fallback: use full response as verdict
+
+            logger.info(f"LLM Verdict: Generated for {candidate_name} → {recommendation}")
 
             return {
-                "verdict": verdict,
+                "verdict"       : verdict,
                 "recommendation": recommendation,
-                "source": "llm",
+                "source"        : "llm",
             }
 
         except Exception as e:
-          logger.warning(
-            f"LLM Verdict: Groq API failed - {e}. Using rule-based fallback."
-        )
+            logger.warning(f"LLM Verdict: API call failed — {e}. Using rule-based fallback.")
 
 
    
