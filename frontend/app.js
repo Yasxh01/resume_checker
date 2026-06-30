@@ -17,9 +17,6 @@
 
 'use strict';
 
-// ============================================================
-// CONFIGURATION
-// ============================================================
 // Config
 const API_BASE = '';
 
@@ -35,9 +32,6 @@ const LAYERS = [
 const WEIGHT_DEFAULTS = [8, 7, 6, 5, 4];
 const RANK_MEDALS = ['🥇', '🥈', '🥉'];
 
-// ============================================================
-// STATE
-// ============================================================
 let state = {
   theme: 'dark',
   jdTemplates: {},
@@ -53,77 +47,11 @@ let state = {
   itemsPerPage: 10,
 };
 
-// ============================================================
-// DOM HELPERS
-// ============================================================
 const $ = (sel, ctx = document) => ctx.querySelector(sel);
 const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
 
 function show(el) { if (el) el.style.display = ''; }
 function hide(el) { if (el) el.style.display = 'none'; }
-
-function autoExtractMetadata(c) {
-  if (!c.resume_text) return;
-  const text = c.resume_text;
-
-  // 1. GitHub Username
-  const githubMatch = text.match(/(?:github\.com\/|github:? )([a-zA-Z0-9-]+)/i);
-  if (githubMatch && githubMatch[1]) c.github_username = githubMatch[1].trim();
-
-  // 2. Years of Experience (Smarter Heuristic)
-  // First try direct mention
-  const expMatch = text.match(/(\d+)\+?\s*years?(?:\s*of)?\s*experience/i);
-  if (expMatch && expMatch[1]) {
-    c.years_of_experience = parseInt(expMatch[1], 10);
-  } else {
-    // Fallback: Estimate from date ranges (e.g. 2018 - 2023)
-    const years = [...text.matchAll(/(?:20|19)\d{2}/g)].map(m => parseInt(m[0], 10));
-    if (years.length >= 2) {
-      const minYear = Math.min(...years);
-      const maxYear = Math.max(...years, new Date().getFullYear());
-      // Sanity check
-      if (maxYear - minYear > 0 && maxYear - minYear < 40) {
-        c.years_of_experience = maxYear - minYear;
-      } else {
-        c.years_of_experience = 0;
-      }
-    } else {
-      c.years_of_experience = 0; // Default
-    }
-  }
-
-  // 3. Skills Extraction
-  const commonSkills = ["Python", "JavaScript", "React", "Node.js", "Java", "C++", "SQL", "Docker", "Kubernetes", "AWS", "Machine Learning", "Data Analysis", "Go", "Rust", "Ruby on Rails", "Angular", "Vue.js", "MongoDB", "PostgreSQL", "Redis", "TypeScript", "HTML", "CSS", "C#", ".NET", "PHP", "Swift", "Kotlin", "Spring", "Django", "Flask", "Express", "GCP", "Azure"];
-  const foundSkills = new Set(c.skills || []);
-
-  commonSkills.forEach(skill => {
-    const escapedSkill = skill.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp(`\\b${escapedSkill}\\b`, 'i').test(text)) {
-      foundSkills.add(skill);
-    }
-  });
-  c.skills = Array.from(foundSkills);
-
-  // 4. Projects Text (Robust Heuristic)
-  // Look for "Projects", "Personal Projects", "Open Source", etc.
-  const projectsMatch = text.match(/(?:(?:Personal\s+|Academic\s+)?Projects?|Open Source)(?:\s*:|\n|)[ \t]*([\s\S]{10,800}?)(?=\n\s*(?:(?:Professional\s+|Work\s+)?Experience|Education|Skills|Languages|Certifications|Work History|Employment|Career|$))/i);
-  
-  if (projectsMatch && projectsMatch[1]) {
-    let pText = projectsMatch[1].trim();
-    if (pText.length > 500) pText = pText.substring(0, 500) + '...';
-    c.projects_text = pText;
-  } else {
-    // If we can't cleanly extract a section, grab a slice containing "project" context.
-    // Use [\s\S] instead of . so it crosses line breaks!
-    const fallbackMatch = text.match(/[\s\S]{0,150}project[\s\S]{0,400}/i);
-    if (fallbackMatch) {
-      c.projects_text = fallbackMatch[0].trim() + '...';
-    } else {
-      // Ultimate fallback: Just grab the last 400 characters of the resume
-      c.projects_text = text.length > 400 ? text.slice(-400) : text;
-    }
-  }
-}
 
 function logProgress(msg, color = '') {
   const log = $('#progressLog');
@@ -141,9 +69,17 @@ function setProgress(pct) {
   if (fill) fill.style.width = Math.min(pct, 100) + '%';
 }
 
-// ============================================================
-// THEME TOGGLE
-// ============================================================
+window.showLayerDetailsModal = function (htmlContent) {
+  const modal = document.getElementById('layerDetailsModal');
+  const body = document.getElementById('layerDetailsModalBody');
+  if (modal && body) {
+    // Strip out any inline styles that might conflict with the modal's sleek look, or just render it directly
+    body.innerHTML = htmlContent;
+    modal.style.display = 'flex';
+    if (window.lucide) window.lucide.createIcons();
+  }
+};
+
 function initTheme() {
   const saved = localStorage.getItem('recruitiq-theme') || 'dark';
   applyTheme(saved);
@@ -173,9 +109,6 @@ function applyTheme(theme) {
   });
 }
 
-// ============================================================
-// API HEALTH CHECK
-// ============================================================
 async function checkApiHealth() {
   const dot = $('.status-dot');
   const text = $('#apiStatusText');
@@ -196,7 +129,8 @@ async function checkApiHealth() {
 
 function showApiOfflineWarning() {
   const banner = document.createElement('div');
-  banner.style.cssText = `
+  const warning = document.createElement('div');
+  warning.style.cssText = `
     background: rgba(233,30,140,0.1);
     border: 1px solid rgba(233,30,140,0.3);
     color: #e91e8c;
@@ -204,18 +138,18 @@ function showApiOfflineWarning() {
     text-align: center;
     font-size: 0.82rem;
     font-weight: 600;
+    z-index: 99999;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
   `;
-  banner.innerHTML = `
-    ⚠️ FastAPI backend not running.
-    Start it with: <code style="background:rgba(0,0,0,0.2);padding:0.1rem 0.4rem;border-radius:4px;">
-    cd backend && uvicorn main:app --reload --port 8000</code>
+  warning.innerHTML = `
+    ⚠️ FastAPI backend not running. <button onclick="this.parentElement.remove()" style="margin-left:1rem;background:rgba(0,0,0,0.2);border:none;color:var(--text-primary);padding:0.2rem 0.5rem;border-radius:4px;cursor:pointer;">Dismiss</button>
   `;
-  document.body.insertBefore(banner, document.body.firstChild);
+  document.body.insertBefore(warning, document.body.firstChild);
 }
 
-// ============================================================
-// LOAD JD TEMPLATES
-// ============================================================
 async function loadJdTemplates() {
   try {
     const res = await fetch(`${API_BASE}/api/job-descriptions`);
@@ -258,9 +192,6 @@ function loadJd(key) {
   $('#requiredYears').value = jd.required_years;
 }
 
-// ============================================================
-// WEIGHT SLIDERS
-// ============================================================
 function initSliders() {
   const container = $('#sliderGroup');
   const summary = $('#weightSummary');
@@ -344,9 +275,6 @@ function recalculateScores() {
   renderResults(state.lastResults);
 }
 
-// ============================================================
-// CANDIDATE CARDS & PAGINATION
-// ============================================================
 function initPagination() {
   $('#itemsPerPage').addEventListener('change', (e) => {
     state.itemsPerPage = e.target.value === '1000000' ? 1000000 : parseInt(e.target.value);
@@ -493,7 +421,7 @@ function renderCandidateCards() {
           ${c._pdfSource ? `Loaded: ${escHtml(c._pdfSource)} (Click to replace)` : 'Upload PDF to Auto-Fill'}
         </div>
         ${c._pdfUrl ? `
-        <button class="btn btn-sm" onclick="event.stopPropagation(); window.open('${c._pdfUrl}', '_blank')" style="background:var(--accent-purple); color:#fff; border:none; padding:0.2rem 0.6rem; font-size:0.8rem;">
+        <button class="btn btn-sm" onclick="event.stopPropagation(); window.open('${c._pdfUrl}', '_blank')" style="background:var(--accent-purple); color:var(--text-primary); border:none; padding:0.2rem 0.6rem; font-size:0.8rem;">
           <i data-lucide="eye" style="width:14px;height:14px;"></i> Preview
         </button>
         ` : ''}
@@ -608,9 +536,7 @@ window.triggerPdfUpload = function (idx) {
   $('#pdfInput').click();
 };
 
-// ============================================================
 // PDF UPLOAD & DRAG/DROP
-// ============================================================
 function initPdfUpload() {
   const btn = $('#uploadPdfBtn');
   const input = $('#pdfInput');
@@ -658,28 +584,41 @@ function initPdfUpload() {
         results.forEach((result) => {
           if (result.status === 'fulfilled') {
             const { file, data } = result.value;
+            const parsed = data.parsed_data || {};
             if (isTargeted && !usedTarget) {
               const c = state.candidates[state._targetUploadIndex];
-              if (/^Candidate \d+$/.test(c.name)) c.name = file.name.replace('.pdf', '');
+              c.name = parsed.name || file.name.replace('.pdf', '');
               c.resume_text = data.extracted_text;
+              c.skills = parsed.skills || c.skills || [];
+              c.years_of_experience = parsed.years_of_experience || c.years_of_experience || 0;
+              c.projects_text = parsed.projects_text || c.projects_text || '';
+              c.github_username = parsed.github_username || c.github_username || '';
+              c.email = parsed.email || c.email || '';
+              c.phone = parsed.phone || c.phone || '';
+              c.linkedin = parsed.linkedin || c.linkedin || '';
+              c.portfolio = parsed.portfolio || c.portfolio || [];
+              c.education = parsed.education || c.education || '';
               c._pdfSource = file.name;
               c._pdfUrl = URL.createObjectURL(file);
-              autoExtractMetadata(c);
               usedTarget = true;
             } else {
               const c = {
                 id: Date.now() + Math.random(),
-                name: file.name.replace('.pdf', ''),
+                name: parsed.name || file.name.replace('.pdf', ''),
                 resume_text: data.extracted_text,
-                skills: [],
-                years_of_experience: 0,
-                projects_text: '',
-                github_username: '',
+                skills: parsed.skills || [],
+                years_of_experience: parsed.years_of_experience || 0,
+                projects_text: parsed.projects_text || '',
+                github_username: parsed.github_username || '',
+                email: parsed.email || '',
+                phone: parsed.phone || '',
+                linkedin: parsed.linkedin || '',
+                portfolio: parsed.portfolio || [],
+                education: parsed.education || '',
                 _pdfSource: file.name,
                 _pdfUrl: URL.createObjectURL(file),
                 isMinimized: true // Always minimized by default
               };
-              autoExtractMetadata(c);
               state.candidates.push(c);
             }
           } else {
@@ -754,9 +693,6 @@ function initPdfUpload() {
   });
 }
 
-// ============================================================
-// EVALUATION PIPELINE
-// ============================================================
 async function runEvaluation() {
   // Validate inputs
   if (!state.candidates.length) {
@@ -810,42 +746,52 @@ async function runEvaluation() {
     gemini_api_key: $('#geminiApiKey') ? $('#geminiApiKey').value.trim() : ''
   };
 
-  // Update UI: show progress, hide results
+  // Update UI: show progress, show results with skeletons
   const runBtn = $('#runBtn');
   runBtn.disabled = true;
   runBtn.innerHTML = `<span class="spinner"></span> Running Pipeline...`;
-  hide($('#resultsSection'));
 
   const progressPanel = $('#progressPanel');
   show(progressPanel);
-  $('#progressLog').innerHTML = '';
-  setProgress(0);
+  const section = $('#resultsSection');
+  show(section);
+  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Progress simulation steps
-  const totalSteps = state.candidates.length * 5 + 2;
-  let step = 0;
+  // Setup Orb Fading Text
+  const statusText = $('#aiStatusText');
+  const phrases = [
+    "Initializing Neural Engines...",
+    "Extracting Semantic Embeddings...",
+    "Querying GitHub APIs...",
+    "Calculating Experience Vectors...",
+    "Generating AI Verdicts...",
+    "Finalizing Rankings..."
+  ];
+  let phraseIdx = 0;
+  if (statusText) statusText.textContent = phrases[0];
+  const phraseInterval = setInterval(() => {
+    phraseIdx = (phraseIdx + 1) % phrases.length;
+    if (statusText) statusText.textContent = phrases[phraseIdx];
+  }, 1200);
 
-  function tick(msg, color) {
-    step++;
-    logProgress(msg, color);
-    setProgress((step / totalSteps) * 95);
+  // Setup Skeletons
+  const container = $('#rankingCards');
+  container.innerHTML = '';
+  const numSkeletons = Math.min(3, state.candidates.length);
+  for (let i = 0; i < numSkeletons; i++) {
+    container.innerHTML += `
+      <div class="skeleton-card">
+        <div class="skeleton-line title"></div>
+        <div class="skeleton-line full"></div>
+        <div class="skeleton-line full"></div>
+        <div class="skeleton-line short" style="margin-top:20px;"></div>
+      </div>
+    `;
   }
+  $('#resultsPaginationControls').style.display = 'none';
+  $('#biasFlagsPanel').style.display = 'none';
 
   try {
-    tick('⚙️  Initializing evaluation pipeline...');
-
-    for (let i = 0; i < state.candidates.length; i++) {
-      const name = state.candidates[i].name;
-      tick(`\n🔍 Evaluating: ${name}`);
-      tick(`  → 🧠 Layer 1: Neural semantic matching...`);
-      tick(`  → 🗂️  Layer 2: Taxonomy & alias resolution...`);
-      tick(`  → 📅 Layer 3: Experience ratio scoring...`);
-      tick(`  → 💼 Layer 4: Project portfolio relevance...`);
-      tick(`  → 🐙 Layer 5: GitHub behavioral API...`);
-    }
-
-    tick('\n📊 Computing composite scores & ranking...');
-
     // Actual API call
     const res = await fetch(`${API_BASE}/api/evaluate`, {
       method: 'POST',
@@ -861,31 +807,63 @@ async function runEvaluation() {
     const data = await res.json();
     state.lastResults = data;
 
-    setProgress(100);
-    logProgress('\n✅ Pipeline complete!', '#00d4aa');
-
     // Render results
-    setTimeout(() => {
-      hide(progressPanel);
-      renderResults(data);
-    }, 600);
+    clearInterval(phraseInterval);
+    hide(progressPanel);
+    renderResults(data);
 
   } catch (err) {
-    logProgress(`\n❌ Error: ${err.message}`, '#e91e8c');
+    clearInterval(phraseInterval);
+    hide(progressPanel);
     showToast(`Evaluation failed: ${err.message}`, 'error');
-    runBtn.disabled = false;
-    runBtn.innerHTML = `<i data-lucide="zap"></i> Run Evaluation Pipeline`;
-    lucide.createIcons();
+    container.innerHTML = `<div style="color:var(--accent-pink); padding: 1rem;">Failed to load results.</div>`;
   } finally {
     runBtn.disabled = false;
     runBtn.innerHTML = `<i data-lucide="zap"></i> Run Evaluation Pipeline`;
-    lucide.createIcons();
+    if (window.lucide) lucide.createIcons();
   }
 }
 
-// ============================================================
-// RENDER RESULTS
-// ============================================================
+function togglePersonalInfo(globalIdx) {
+  const c = state.candidates[globalIdx];
+  if (!c) return;
+
+  const modal = $('#infoModal');
+  const container = $('#infoModalContainer');
+
+  container.innerHTML = `
+    <div style="background:var(--bg-panel); border:1px solid var(--border); border-radius:10px; padding:1.5rem; margin-bottom:1.5rem;">
+      <p style="font-size:1.1rem; color:var(--text-primary); margin-bottom:1rem; font-weight:500;">
+        <i data-lucide="mail" style="width:16px; height:16px; margin-right:0.5rem; color:var(--accent-teal);"></i>
+        Email: <a href="mailto:${c.email}" style="color:var(--accent-blue); text-decoration:none;">${c.email || 'N/A'}</a>
+      </p>
+      <p style="font-size:1.1rem; color:var(--text-primary); margin-bottom:1rem; font-weight:500;">
+        <i data-lucide="phone" style="width:16px; height:16px; margin-right:0.5rem; color:var(--accent-teal);"></i>
+        Phone: ${c.phone || 'N/A'}
+      </p>
+      <p style="font-size:1.1rem; color:var(--text-primary); margin-bottom:1rem; font-weight:500;">
+        <i data-lucide="graduation-cap" style="width:16px; height:16px; margin-right:0.5rem; color:var(--accent-teal);"></i>
+        Education: ${c.education || 'N/A'}
+      </p>
+      <p style="font-size:1.1rem; color:var(--text-primary); margin-bottom:1rem; font-weight:500;">
+        <i data-lucide="linkedin" style="width:16px; height:16px; margin-right:0.5rem; color:var(--accent-teal);"></i>
+        LinkedIn: ${c.linkedin ? `<a href="https://linkedin.com/in/${c.linkedin}" target="_blank" style="color:var(--accent-blue); text-decoration:none;">${c.linkedin}</a>` : 'N/A'}
+      </p>
+      ${c.portfolio?.length ? `
+      <p style="font-size:1.1rem; color:var(--text-primary); margin-bottom:1rem; font-weight:500;">
+        <i data-lucide="globe" style="width:16px; height:16px; margin-right:0.5rem; color:var(--accent-teal);"></i>
+        Portfolio: 
+        <br><br>
+        ${c.portfolio.map(p => `<a href="${p}" target="_blank" style="color:var(--accent-blue); text-decoration:none; margin-right:12px; font-size:1rem;">${p}</a>`).join('<br>')}
+      </p>
+      ` : ''}
+    </div>
+  `;
+
+  if (window.lucide) lucide.createIcons();
+  modal.style.display = 'flex';
+}
+
 function renderResults(data) {
   const section = $('#resultsSection');
   show(section);
@@ -901,9 +879,6 @@ function renderResults(data) {
   renderWeightGrid(data.weights);
 }
 
-// ============================================================
-// RANKING CARDS
-// ============================================================
 function renderRankingCards(overrideResults = null) {
   const container = $('#rankingCards');
   container.innerHTML = '';
@@ -934,12 +909,11 @@ function renderRankingCards(overrideResults = null) {
     const card = document.createElement('div');
     card.className = 'ranking-card';
 
-    const verdictHTML = r.verdict ? buildVerdictHTML(r.verdict) : '';
-    const githubHTML = buildGithubHTML(r.github_data);
+    const verdictHTML = buildVerdictHTML(r, globalIdx);
+    const githubHTML = buildGithubHTML(r.github_data, r.github_persona);
     const skillHTML = buildSkillHTML(r.matched_skills, r.missing_skills);
 
     card.innerHTML = `
-      <!-- HEADER -->
       <div class="ranking-card-header" style="cursor:pointer;" onclick="const body = this.nextElementSibling; const icon = this.querySelector('.toggle-icon'); if(body.style.display === 'none'){ body.style.display = 'grid'; icon.setAttribute('data-lucide', 'chevron-up'); } else { body.style.display = 'none'; icon.setAttribute('data-lucide', 'chevron-down'); } if(window.lucide) lucide.createIcons();">
         <div class="ranking-card-left" style="display:flex; align-items:center;">
           <i data-lucide="chevron-down" class="toggle-icon" style="color:var(--text-muted); margin-right:0.5rem; width:20px;"></i>
@@ -956,11 +930,15 @@ function renderRankingCards(overrideResults = null) {
         <div style="display:flex; flex-direction:column; align-items:flex-end;">
           <div class="composite-score" id="cScore${globalIdx}">0%</div>
           <div style="margin-top:0.5rem; display:flex; gap:0.5rem;">
-            <button class="btn btn-sm" onclick="event.stopPropagation(); generateInterviewQuestions(${globalIdx})" title="AI Interview Guide" style="background:var(--bg-panel); border:1px solid var(--accent-teal); color:var(--accent-teal); padding:0.2rem 0.5rem; font-size:0.75rem;">
-              <i data-lucide="bot" style="width:12px; height:12px;"></i> Q&A
+            <button class="btn-ai-aesthetic" onclick="event.stopPropagation(); generateInterviewQuestions(${globalIdx})" title="AI Interview Guide">
+              <i data-lucide="message-square" style="width:14px; height:14px; stroke-width:1.5;"></i> Q&A
+              <i data-lucide="sparkles" class="btn-sparkle" style="stroke-width:1.5;"></i>
+            </button>
+            <button class="btn-info-aesthetic" onclick="event.stopPropagation(); togglePersonalInfo(${globalIdx})" title="Personal Info">
+              <i data-lucide="user" style="width:12px; height:12px;"></i> Info
             </button>
             ${state.candidates[globalIdx] && state.candidates[globalIdx]._pdfUrl ? `
-            <button class="btn btn-sm" onclick="event.stopPropagation(); window.open('${state.candidates[globalIdx]._pdfUrl}', '_blank')" title="View PDF" style="background:var(--accent-purple); border:none; color:#fff; padding:0.2rem 0.5rem; font-size:0.75rem;">
+            <button class="btn btn-sm" onclick="event.stopPropagation(); window.open('${state.candidates[globalIdx]._pdfUrl}', '_blank')" title="View PDF" style="background:var(--accent-purple); border:none; color:var(--text-primary); padding:0.2rem 0.5rem; font-size:0.75rem;">
               <i data-lucide="file-text" style="width:12px; height:12px;"></i> PDF
             </button>
             ` : ''}
@@ -973,15 +951,65 @@ function renderRankingCards(overrideResults = null) {
         <div>
           <!-- Layer scores -->
           <div class="layer-scores-grid">
-            ${LAYERS.map((l, li) => `
+            ${LAYERS.map((l, li) => {
+      let extraDetails = '';
+      if (l.key === 'score_l4' && r.layer4_data) {
+        const ld = r.layer4_data;
+        const isGithub = ld.method === 'github_api';
+        if (isGithub) {
+          extraDetails = `
+                    <div style="margin-top:0.5rem; text-align:left;">
+                      <a href="javascript:void(0)" onclick="if(window.showLayerDetailsModal) window.showLayerDetailsModal(this.nextElementSibling.innerHTML)" style="font-size:0.75rem; color:var(--accent-purple); text-decoration:none;"><i data-lucide="info" style="width:12px;height:12px;"></i> View Details</a>
+                      <div style="display:none;">
+                        <div style="margin-bottom:0.75rem;"><strong style="color:var(--text-primary);">📁 Project Relevance (${ld.score}%)</strong></div>
+                        <div style="margin-bottom:0.5rem;"><strong style="color:var(--text-primary);">Method</strong><br/>GitHub Verified ✅</div>
+                        <div style="margin-bottom:0.5rem;"><strong style="color:var(--text-primary);">Repositories Analysed</strong><br/>${ld.repos_analysed || 0}</div>
+                        <div style="margin-bottom:0.5rem;"><strong style="color:var(--text-primary);">Matched Project Skills</strong><br/>${(ld.matched_skills || []).length > 0 ? (ld.matched_skills || []).map(s => '✔ ' + escHtml(s)).join('<br/>') : 'None'}</div>
+                        <div style="margin-bottom:0.5rem;"><strong style="color:var(--text-primary);">Top Languages</strong><br/>${(ld.top_languages || []).join(', ') || 'N/A'}</div>
+                        <div style="margin-bottom:0.5rem;"><strong style="color:var(--text-primary);">Community Signals</strong><br/>⭐ Stars: ${ld.total_stars || 0}<br/>🍴 Forks: ${ld.total_forks || 0}</div>
+                        <div style="margin-bottom:0.5rem;"><strong style="color:var(--text-primary);">Repository Quality</strong><br/>📖 Documented Repositories: ${ld.documented_repos || 0}/${ld.repos_analysed || 0}<br/>🟢 Active Repositories: ${ld.recently_active || 0}/${ld.repos_analysed || 0}</div>
+                        <div><strong style="color:var(--text-primary);">Reason</strong><br/>${(ld.matched_skills || []).length} required skills were verified from GitHub repositories.</div>
+                      </div>
+                    </div>
+                  `;
+        } else {
+          extraDetails = `
+                    <div style="margin-top:0.5rem; text-align:left;">
+                      <a href="javascript:void(0)" onclick="if(window.showLayerDetailsModal) window.showLayerDetailsModal(this.nextElementSibling.innerHTML)" style="font-size:0.75rem; color:var(--accent-purple); text-decoration:none;"><i data-lucide="info" style="width:12px;height:12px;"></i> View Details</a>
+                      <div style="display:none;">
+                        <div style="margin-bottom:0.75rem;"><strong style="color:var(--text-primary);">📁 Project Relevance (${ld.score}%)</strong></div>
+                        <div style="margin-bottom:0.5rem;"><strong style="color:var(--text-primary);">Method</strong><br/>Semantic Project Matching</div>
+                        <div style="margin-bottom:0.5rem;"><strong style="color:var(--text-primary);">Reason</strong><br/>Project descriptions matched the Job Description using sentence embeddings.</div>
+                        <div><strong style="color:var(--text-primary);">GitHub</strong><br/>Not Available</div>
+                      </div>
+                    </div>
+                  `;
+        }
+      } else if (l.key === 'score_l5' && r.github_data && r.github_data.status === 'success') {
+        const gd = r.github_data;
+        extraDetails = `
+                  <div style="margin-top:0.5rem; text-align:left;">
+                    <a href="javascript:void(0)" onclick="if(window.showLayerDetailsModal) window.showLayerDetailsModal(this.nextElementSibling.innerHTML)" style="font-size:0.75rem; color:var(--accent-purple); text-decoration:none;"><i data-lucide="info" style="width:12px;height:12px;"></i> View Details</a>
+                    <div style="display:none;">
+                      <div style="margin-bottom:0.75rem;"><strong style="color:var(--text-primary);">🐙 GitHub Quality (${gd.score}/100)</strong></div>
+                      <div style="margin-bottom:0.5rem;"><strong style="color:var(--text-primary);">Method</strong><br/>Events API Tracking ✅</div>
+                      <div style="margin-bottom:0.5rem;"><strong style="color:var(--text-primary);">Repositories Analysed</strong><br/>${gd.public_repos || 0}</div>
+                      <div style="margin-bottom:0.5rem;"><strong style="color:var(--text-primary);">Community Signals</strong><br/>⭐ Stars: ${gd.total_stars || 0}<br/>🍴 Forks: ${gd.total_forks || 0}<br/>👥 Followers: ${gd.followers || 0}</div>
+                      <div><strong style="color:var(--text-primary);">Reason</strong><br/>GitHub activity metrics and commit consistency verified.</div>
+                    </div>
+                  </div>
+                `;
+      }
+      return `
               <div class="layer-score-item">
                 <span class="layer-score-label">${l.shortLabel}</span>
                 <span class="layer-score-value" id="lScore${globalIdx}_${li}" style="color:${l.color}">0%</span>
                 <div class="score-bar">
                   <div class="score-bar-fill" id="lBar${globalIdx}_${li}" style="background:${l.color}"></div>
                 </div>
+                ${extraDetails}
               </div>
-            `).join('')}
+            `}).join('')}
           </div>
 
           <!-- Composite bar -->
@@ -997,9 +1025,6 @@ function renderRankingCards(overrideResults = null) {
 
           <!-- Skill explanation -->
           ${skillHTML}
-
-          <!-- GitHub info -->
-          ${githubHTML}
 
           <!-- LLM Verdict -->
           ${verdictHTML}
@@ -1044,11 +1069,10 @@ function renderRankingCards(overrideResults = null) {
     // Render radar chart
     renderRadarChart(globalIdx, r, scoreValues);
   });
+
+  if (window.lucide) lucide.createIcons();
 }
 
-// ============================================================
-// ANIMATED COUNTER
-// ============================================================
 function animateCounter(elId, target, suffix, duration) {
   const el = document.getElementById(elId);
   if (!el) return;
@@ -1070,9 +1094,6 @@ function animateCounter(elId, target, suffix, duration) {
   requestAnimationFrame(update);
 }
 
-// ============================================================
-// RADAR CHART
-// ============================================================
 function renderRadarChart(idx, result, scores) {
   const canvas = document.getElementById(`radar${idx}`);
   if (!canvas) return;
@@ -1124,9 +1145,6 @@ function renderRadarChart(idx, result, scores) {
   state.radarCharts[idx] = chart;
 }
 
-// ============================================================
-// SKILL EXPLANATION HTML
-// ============================================================
 function buildSkillHTML(matched, missing) {
   if (!matched?.length && !missing?.length) return '';
   return `
@@ -1147,10 +1165,7 @@ function buildSkillHTML(matched, missing) {
   `;
 }
 
-// ============================================================
-// GITHUB INFO HTML
-// ============================================================
-function buildGithubHTML(githubData) {
+function buildGithubHTML(githubData, persona = 'Unknown') {
   if (!githubData || githubData.status !== 'success') {
     const statusMessages = {
       no_username: 'No GitHub username provided — neutral score applied.',
@@ -1163,20 +1178,87 @@ function buildGithubHTML(githubData) {
     return `<div class="github-info"><span>🐙 ${msg}</span></div>`;
   }
 
+  const personaBadge = `<span class="badge" style="background:var(--accent-purple); color:var(--text-primary); font-size:0.75rem; padding:2px 6px;">Persona: ${persona}</span>`;
+
   return `
     <div class="github-info">
-      <span class="github-stat">🐙 <strong>${githubData.public_repos}</strong> public repos (+${githubData.repo_score} pts)</span>
-      <span class="github-stat">👥 <strong>${githubData.followers}</strong> followers (+${githubData.follower_score} pts)</span>
-      <span class="github-stat">⭐ GitHub Score: <strong>${githubData.score}/100</strong></span>
+      <span class="github-stat">🐙 Repositories: <strong>${githubData.public_repos || 0}</strong></span>
+      <span class="github-stat">⭐ Stars: <strong>${githubData.total_stars || 0}</strong></span>
+      <span class="github-stat">🍴 Forks: <strong>${githubData.total_forks || 0}</strong></span>
+      <span class="github-stat">👥 Followers: <strong>${githubData.followers || 0}</strong></span>
+      <span class="github-stat">⭐ GitHub Quality: <strong>${githubData.score || 0}/100</strong></span>
+      ${personaBadge ? `<div style="margin-top:0.5rem;">${personaBadge}</div>` : ''}
     </div>
   `;
 }
 
-// ============================================================
-// VERDICT HTML
-// ============================================================
-function buildVerdictHTML(verdict) {
-  if (!verdict) return '';
+window.generateVerdictOnDemand = async function (idx) {
+  if (!state.lastResults || !state.lastResults.results || !state.lastResults.results[idx]) {
+    console.error("Candidate not found at idx:", idx);
+    return;
+  }
+  const r = state.lastResults.results[idx];
+  const jdText = $('#jdText').value.trim();
+  const jdSkills = $('#jdSkills').value.split(',').map(s => s.trim()).filter(Boolean);
+  const apiKey = $('#geminiApiKey') ? $('#geminiApiKey').value.trim() : '';
+
+  const vBox = $('#verdictBox' + idx);
+  if (vBox) {
+    vBox.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-color:var(--accent-purple) transparent var(--accent-purple) transparent;"></div><span style="margin-left:0.5rem;font-size:0.85rem;color:var(--text-secondary);">Generating AI Verdict...</span>';
+    vBox.style.cursor = 'wait';
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/verdict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        candidate_name: r.name,
+        scores: {
+          score_l1: r.score_l1,
+          score_l2: r.score_l2,
+          score_l3: r.score_l3,
+          score_l4: r.score_l4,
+          score_l5: r.score_l5,
+          composite: r.composite
+        },
+        jd_text: jdText,
+        candidate_skills: r.skills,
+        years_of_experience: r.years_of_experience || 0,
+        gemini_api_key: apiKey
+      }),
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const verdict = await res.json();
+    r.verdict = verdict;
+
+    if (vBox) {
+      vBox.outerHTML = buildVerdictHTML(r, idx);
+    }
+    renderScoreTable();
+    if (window.lucide) window.lucide.createIcons();
+
+  } catch (err) {
+    console.error('Failed to generate AI verdict:', err);
+    if (vBox) {
+      vBox.innerHTML = '<span style="color:var(--accent-pink);font-size:0.85rem;">Failed to generate verdict</span>';
+      vBox.style.cursor = 'pointer';
+    }
+  }
+};
+
+function buildVerdictHTML(r, globalIdx) {
+  const verdict = r.verdict;
+  if (!verdict) {
+    return `
+      <div class="verdict-box" id="verdictBox${globalIdx}" style="display:flex; justify-content:center; align-items:center; padding:1rem; border:1px dashed var(--border-light); border-radius:8px; cursor:pointer; margin-top:1rem; transition: background 0.2s;" onclick="event.stopPropagation(); generateVerdictOnDemand(${globalIdx})" onmouseover="this.style.background='rgba(124,111,247,0.05)'" onmouseout="this.style.background='transparent'">
+        <span style="color:var(--accent-purple); font-size:0.85rem; display:flex; align-items:center; gap:0.5rem; font-weight:600;">
+          <i data-lucide="sparkles" style="width:16px; height:16px;"></i> Click to generate AI Verdict
+        </span>
+      </div>
+    `;
+  }
 
   const recBadge = {
     'Strong Hire': '<span class="badge badge-hire">✅ Strong Hire</span>',
@@ -1189,10 +1271,11 @@ function buildVerdictHTML(verdict) {
     : '<span style="font-size:0.65rem;color:var(--text-muted);">RULE-BASED VERDICT</span>';
 
   return `
-    <div class="verdict-box">
+    <div class="verdict-box" id="verdictBox${globalIdx}">
       <div class="verdict-header">
         <span class="verdict-label">🤖 Hiring Recommendation</span>
-        <div style="display:flex;gap:0.5rem;align-items:center;">
+        <div style="display:flex;gap:0.5rem;align-ite
+display:flex;gap:0.5rem;align-items:center;">
           ${sourceTag}
           ${recBadge}
         </div>
