@@ -1,43 +1,32 @@
-# ============================================================
-# main.py — FastAPI Application Server
-# ============================================================
-# PURPOSE:
-#   This is the central API server. It exposes REST endpoints
-#   that the HTML/JS frontend calls via fetch().
-#
-# HOW TO RUN:
-#   cd backend
-#   uvicorn main:app --reload --port 8000
-#
-# API ENDPOINTS:
-#   GET  /api/health           → Server health check
-#   GET  /api/job-descriptions → List all available JDs
-#   POST /api/evaluate         → Run full pipeline
-#   POST /api/upload-resume    → Parse uploaded PDF
-#   POST /api/verdict          → Generate LLM verdict
-#   GET  /api/export-csv       → Download results as CSV
-# ============================================================
+"""
+=============================================================================
+ RESUME_LLM Core Server
+=============================================================================
+ Main entry point for the FastAPI application. Orchestrates the 5-layer 
+ hybrid scoring pipeline, handles PDF resume parsing, interfaces with 
+ the Gemini LLM for candidate verdicts, and serves the frontend UI.
+=============================================================================
+"""
 
 import io
 import csv
-import json
 import logging
 import asyncio
-from pathlib import Path
-from dotenv import load_dotenv
-
-ROOT_DIR = Path(__file__).resolve().parent
-load_dotenv(ROOT_DIR / ".env")
+import os
+import sys
 
 from typing import List, Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-
-
+# Import scoring layers
 from backend.layer_1_semantic   import calculate_semantic_match
 from backend.layer_2_taxonomy   import calculate_taxonomy_score
 from backend.layer_3_experience import calculate_experience_score
@@ -46,6 +35,7 @@ from backend.layer_5_behavioral import calculate_github_score
 from backend.bias_detector      import detect_bias_flags
 from backend.llm_verdict        import generate_verdict
 from backend.data               import job_descriptions, candidate_profiles, DEFAULT_JD
+from backend.resume_parser      import parse_resume_data
 
 # PDF parsing
 try:
@@ -58,22 +48,15 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ============================================================
-# FASTAPI APP INITIALIZATION
-# ============================================================
 app = FastAPI(
     title       = "AI Candidate Ranking Platform API",
     description = "Multi-layer hybrid scoring pipeline for candidate evaluation",
     version     = "2.0.0",
 )
 
-# ============================================================
-# CORS MIDDLEWARE
-# ============================================================
 # CORS (Cross-Origin Resource Sharing) allows the HTML frontend
 # (running on file:// or a different port) to call this API.
 # Without this, browsers block cross-origin requests.
-# ============================================================
 app.add_middleware(
     CORSMiddleware,
     allow_origins     = ["*"],  # In production: specify exact frontend URL
@@ -82,14 +65,10 @@ app.add_middleware(
     allow_headers     = ["*"],
 )
 
-
-# ============================================================
 # PYDANTIC MODELS — Request/Response Schemas
-# ============================================================
 # Pydantic models define the exact shape of JSON data
 # that our endpoints accept and return. FastAPI uses these
 # for automatic validation and documentation.
-# ============================================================
 
 class CandidateInput(BaseModel):
     """Schema for a single candidate profile."""
@@ -100,7 +79,6 @@ class CandidateInput(BaseModel):
     projects_text      : Optional[str] = ""
     github_username    : Optional[str] = ""
 
-
 class WeightsInput(BaseModel):
     """Schema for layer weight configuration."""
     w1: float = 8.0   # Semantic
@@ -108,7 +86,6 @@ class WeightsInput(BaseModel):
     w3: float = 6.0   # Experience
     w4: float = 5.0   # Projects
     w5: float = 4.0   # GitHub
-
 
 class EvaluationRequest(BaseModel):
     """Schema for the full evaluation pipeline request."""
@@ -120,7 +97,6 @@ class EvaluationRequest(BaseModel):
     generate_verdicts: bool = False
     gemini_api_key: Optional[str] = ""
 
-
 class VerdictRequest(BaseModel):
     candidate_name     : str
     scores             : dict
@@ -129,26 +105,15 @@ class VerdictRequest(BaseModel):
     years_of_experience: int
     gemini_api_key     : Optional[str] = ""
 
-
 class InterviewQuestionsRequest(BaseModel):
     candidate: dict
     jd_text: str
     gemini_api_key: Optional[str] = ""
 
-
-# ============================================================
-# IN-MEMORY RESULTS STORE
-# ============================================================
 # Stores the last evaluation results so the CSV export
 # endpoint can access them without re-running the pipeline.
 # In production: use Redis or a database.
-# ============================================================
 _last_results = []
-
-
-# ============================================================
-# API ENDPOINTS
-# ============================================================
 
 @app.get("/api/health")
 async def health_check():
@@ -158,7 +123,6 @@ async def health_check():
         "version"      : "2.0.0",
         "pdf_support"  : PDF_AVAILABLE,
     }
-
 
 @app.get("/api/job-descriptions")
 async def get_job_descriptions():
@@ -176,7 +140,6 @@ async def get_job_descriptions():
         "candidates"      : candidate_profiles,
     }
 
-
 @app.post("/api/evaluate")
 async def evaluate_candidates(request: EvaluationRequest):
     """
@@ -193,9 +156,6 @@ async def evaluate_candidates(request: EvaluationRequest):
     """
     global _last_results
 
-    # ----------------------------------------------------------
-    # WEIGHT NORMALIZATION
-    # ----------------------------------------------------------
     w = request.weights
     total_weight = w.w1 + w.w2 + w.w3 + w.w4 + w.w5
 
@@ -208,13 +168,8 @@ async def evaluate_candidates(request: EvaluationRequest):
     norm_w4 = w.w4 / total_weight
     norm_w5 = w.w5 / total_weight
 
-    # ----------------------------------------------------------
-    # EVALUATE EACH CANDIDATE
-    # ----------------------------------------------------------
-    results = []
-
-    for candidate in request.candidates:
-
+    # EVALUATE EACH CANDIDATE (CONCURRENTLY)
+    async def _evaluate_single(candidate):
         logger.info(f"Evaluating: {candidate.name}")
 
         # Layer 1: Semantic Match
@@ -236,23 +191,23 @@ async def evaluate_candidates(request: EvaluationRequest):
         exp_result = calculate_experience_score(
             candidate_years = candidate.years_of_experience,
             required_years  = request.required_years,
-            resume_text =candidate.resume_text,
+            resume_text     = candidate.resume_text,
         )
-        score_l3=exp_result["score"]
+        score_l3 = exp_result["score"]
 
         # Layer 4: Project Relevance
-        project_result =await calculate_project_relevance(
-            jd_text       = request.jd_text,
-            projects_text = candidate.projects_text or "",
-            jd_skills=request.jd_skills,
-            github_username= candidate.github_username or "",
+        project_result = await calculate_project_relevance(
+            jd_text         = request.jd_text,
+            projects_text   = candidate.projects_text or "",
+            jd_skills       = request.jd_skills,
+            github_username = candidate.github_username or "",
         )
-        score_l4=project_result["score"]
+        score_l4 = project_result["score"]
 
         # Layer 5: GitHub Behavioral Score
-        github_result =await calculate_github_score(
-    github_username=candidate.github_username or ""
-)
+        github_result = await calculate_github_score(
+            github_username = candidate.github_username or "",
+        )
         score_l5 = github_result["score"]
 
         # Composite Weighted Score
@@ -265,7 +220,7 @@ async def evaluate_candidates(request: EvaluationRequest):
         )
         composite = round(composite, 2)
 
-        results.append({
+        return {
             "name"               : candidate.name,
             "composite"          : composite,
             "score_l1"           : score_l1,
@@ -273,18 +228,22 @@ async def evaluate_candidates(request: EvaluationRequest):
             "score_l3"           : score_l3,
             "score_l4"           : score_l4,
             "score_l5"           : score_l5,
-            "project_data"       :project_result,
             "matched_skills"     : matched_skills,
             "missing_skills"     : missing_skills,
+            "layer3_data"        : exp_result,
+            "layer4_data"        : project_result,
             "github_data"        : github_result,
-            "experience_detail"  : exp_result,
             "years_of_experience": candidate.years_of_experience,
             "required_years"     : request.required_years,
             "skills"             : candidate.skills,
+            "github_persona"     : github_result.get("persona", "Unknown"),
             "verdict"            : None,
-        })
+        }
 
-    # ----------------------------------------------------------
+    # Run all candidate evaluations in parallel
+    tasks = [_evaluate_single(c) for c in request.candidates]
+    results = await asyncio.gather(*tasks)
+
     # SORT BY COMPOSITE SCORE (Highest First)
     results_sorted = sorted(results, key=lambda x: x["composite"], reverse=True)
 
@@ -292,16 +251,11 @@ async def evaluate_candidates(request: EvaluationRequest):
     for i, r in enumerate(results_sorted):
         r["rank"] = i + 1
 
-    # ----------------------------------------------------------
-    # BIAS DETECTION
-    # ----------------------------------------------------------
     bias_flags = detect_bias_flags(results_sorted)
 
-    # ----------------------------------------------------------
-    # LLM VERDICTS (Optional)
-    # ----------------------------------------------------------
+    # LLM VERDICTS (Optional, Concurrent)
     if request.generate_verdicts:
-        logger.info("Evaluation complete. Generating verdicts...")
+        logger.info("Evaluation complete. Generating verdicts in parallel...")
         
         async def _generate_verdict_single(res):
             try:
@@ -318,9 +272,9 @@ async def evaluate_candidates(request: EvaluationRequest):
                 logger.error(f"Error generating verdict for {res.get('name')}: {e}")
                 res["verdict"] = {"verdict": "Error generating verdict.", "recommendation": "Error", "source": "error"}
 
-        verdict_tasks = [_generate_verdict_single(r) for r in results_sorted]
+        verdict_tasks = [_generate_verdict_single(r) for r in results_sorted[:3]]
         await asyncio.gather(*verdict_tasks)
-        
+
     # Store for CSV export
     _last_results = results_sorted
 
@@ -336,7 +290,6 @@ async def evaluate_candidates(request: EvaluationRequest):
         },
         "total_candidates": len(results_sorted),
     }
-
 
 @app.post("/api/upload-resume")
 async def upload_resume(file: UploadFile = File(...)):
@@ -361,11 +314,21 @@ async def upload_resume(file: UploadFile = File(...)):
         pdf_file = io.BytesIO(contents)
 
         extracted_text = ""
+        extracted_uris = []
         with pdfplumber.open(pdf_file) as pdf:
             for page in pdf.pages:
                 page_text = page.extract_text()
                 if page_text:
                     extracted_text += page_text + "\n"
+                    
+                # Extract embedded hyperlinks in the PDF metadata
+                if hasattr(page, 'hyperlinks'):
+                    for link in page.hyperlinks:
+                        if 'uri' in link and link['uri']:
+                            extracted_uris.append(link['uri'])
+
+        if extracted_uris:
+            extracted_text += "\n--- Embedded Links ---\n" + "\n".join(extracted_uris)
 
         extracted_text = extracted_text.strip()
 
@@ -375,9 +338,13 @@ async def upload_resume(file: UploadFile = File(...)):
                 detail      = "Could not extract text from PDF. File may be scanned/image-based."
             )
 
+        # Parse the structured data
+        parsed_data = parse_resume_data(extracted_text, file.filename)
+
         return {
             "success"       : True,
             "extracted_text": extracted_text,
+            "parsed_data"   : parsed_data,
             "page_count"    : len(pdf.pages) if hasattr(pdf, 'pages') else 0,
             "filename"      : file.filename,
         }
@@ -388,10 +355,10 @@ async def upload_resume(file: UploadFile = File(...)):
         logger.error(f"PDF parsing error: {e}")
         raise HTTPException(status_code=500, detail=f"PDF parsing failed: {str(e)}")
 
-
 @app.post("/api/verdict")
 async def get_verdict(request: VerdictRequest):
     """Generates LLM verdict for a single candidate."""
+    global _last_results
     try:
         v = await generate_verdict(
             candidate_name      = request.candidate_name,
@@ -401,10 +368,16 @@ async def get_verdict(request: VerdictRequest):
             years_of_experience = request.years_of_experience,
             api_key             = request.gemini_api_key
         )
+        
+        # Update the backend's in-memory results store so CSV export works correctly
+        for r in _last_results:
+            if r.get("name") == request.candidate_name:
+                r["verdict"] = v
+                break
+                
         return v
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/api/interview-questions")
 async def get_interview_questions(request: InterviewQuestionsRequest):
@@ -426,15 +399,12 @@ async def get_interview_questions(request: InterviewQuestionsRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/export-csv")
 async def export_csv():
     """
     Returns the last evaluation results as a downloadable CSV file.
     Must call /api/evaluate first to populate the results.
     """
-    global _last_results
-
     if not _last_results:
         raise HTTPException(
             status_code = 404,
@@ -449,8 +419,7 @@ async def export_csv():
     writer.writerow([
         "Rank", "Candidate", "Composite %",
         "Semantic %", "Taxonomy %", "Experience %",
-        "Projects %", "GitHub %","Repositories",
-        "Stars","Forks","Top Languages",
+        "Projects %", "GitHub %", "GitHub Persona",
         "Matched Skills", "Missing Skills",
         "Years Experience", "Recommendation"
     ])
@@ -458,7 +427,6 @@ async def export_csv():
     # Data rows
     for r in _last_results:
         verdict_rec = r.get("verdict", {}) or {}
-        project=r.get("project_data") or {}
         writer.writerow([
             r.get("rank", ""),
             r.get("name", ""),
@@ -468,15 +436,10 @@ async def export_csv():
             r.get("score_l3", ""),
             r.get("score_l4", ""),
             r.get("score_l5", ""),
-            
-            project.get("repos_analysed", 0),
-            project.get("total_stars", 0),
-            project.get("total_forks", 0),
-            ", ".join(map(str,project.get("top_languages", []))),
+            r.get("github_persona", ""),
             ", ".join(r.get("matched_skills", [])),
             ", ".join(r.get("missing_skills", [])),
             r.get("years_of_experience", ""),
-            
             verdict_rec.get("recommendation", ""),
         ])
 
@@ -490,9 +453,7 @@ async def export_csv():
         }
     )
 
-# ============================================================
 # SERVE FRONTEND (STATIC FILES)
-# ============================================================
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
@@ -515,7 +476,7 @@ else:
 if __name__ == "__main__":
     import uvicorn
     print("\n========================================================")
-    print(" RecruitIQ Server is starting up...")
-    print(" Open your browser to: http://localhost:8000")
+    print("RecruitIQ Server is starting up...")
+    print("Open your browser to: http://localhost:8000")
     print("========================================================\n")
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
