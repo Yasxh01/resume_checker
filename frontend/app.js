@@ -820,7 +820,13 @@ async function runEvaluation() {
     container.innerHTML = `<div style="color:var(--accent-pink); padding: 1rem;">Failed to load results.</div>`;
   } finally {
     runBtn.disabled = false;
-    runBtn.innerHTML = `<i data-lucide="zap"></i> Run Evaluation Pipeline`;
+    runBtn.innerHTML = `<i data-lucide="refresh-cw"></i> Re-Run Pipeline`;
+    runBtn.classList.remove('btn-primary');
+    runBtn.classList.add('btn-secondary');
+    
+    const runHint = document.querySelector('.run-hint');
+    if (runHint) runHint.style.display = 'none';
+    
     if (window.lucide) lucide.createIcons();
   }
 }
@@ -906,6 +912,9 @@ function renderRankingCards(overrideResults = null) {
 
   pageResults.forEach((r, idx) => {
     const globalIdx = startIdx + idx; // For IDs
+    const origCandIdx = state.candidates.findIndex(c => c.name === r.name);
+    const origCand = origCandIdx !== -1 ? state.candidates[origCandIdx] : null;
+    const infoIdx = origCandIdx !== -1 ? origCandIdx : globalIdx;
     const medal = RANK_MEDALS[globalIdx] || `#${globalIdx + 1}`;
     const card = document.createElement('div');
     card.className = 'ranking-card';
@@ -935,11 +944,11 @@ function renderRankingCards(overrideResults = null) {
               <i data-lucide="message-square" style="width:14px; height:14px; stroke-width:1.5;"></i> Q&A
               <i data-lucide="sparkles" class="btn-sparkle" style="stroke-width:1.5;"></i>
             </button>
-            <button class="btn-info-aesthetic" onclick="event.stopPropagation(); togglePersonalInfo(${globalIdx})" title="Personal Info">
+            <button class="btn-info-aesthetic" onclick="event.stopPropagation(); togglePersonalInfo(${infoIdx})" title="Personal Info">
               <i data-lucide="user" style="width:12px; height:12px;"></i> Info
             </button>
-            ${state.candidates[globalIdx] && state.candidates[globalIdx]._pdfUrl ? `
-            <button class="btn btn-sm" onclick="event.stopPropagation(); window.open('${state.candidates[globalIdx]._pdfUrl}', '_blank')" title="View PDF" style="background:var(--accent-purple); border:none; color:var(--text-primary); padding:0.2rem 0.5rem; font-size:0.75rem;">
+            ${origCand && origCand._pdfUrl ? `
+            <button class="btn btn-sm" onclick="event.stopPropagation(); window.open('${origCand._pdfUrl}', '_blank')" title="View PDF" style="background:var(--accent-purple); border:none; color:var(--text-primary); padding:0.2rem 0.5rem; font-size:0.75rem;">
               <i data-lucide="file-text" style="width:12px; height:12px;"></i> PDF
             </button>
             ` : ''}
@@ -1119,8 +1128,8 @@ function renderRadarChart(idx, result, scores) {
       }],
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: true,
+      responsive: false,
+      maintainAspectRatio: false,
       animation: { duration: 1000, easing: 'easeOutQuart' },
       scales: {
         r: {
@@ -1338,11 +1347,17 @@ function renderScoreTable(results = null) {
   tbody.innerHTML = pageResults.map((r, idx) => {
     const globalIdx = startIdx + idx;
     const medal = RANK_MEDALS[globalIdx] || `#${globalIdx + 1}`;
-    const recBadge = r.verdict ? ({
-      'Strong Hire': '<span class="badge badge-hire" style="font-size:0.65rem">✅ Hire</span>',
-      'Consider': '<span class="badge badge-consider" style="font-size:0.65rem">⚠️ Consider</span>',
-      'Pass': '<span class="badge badge-pass" style="font-size:0.65rem">❌ Pass</span>',
-    }[r.verdict.recommendation] || '') : '—';
+    let recBadge = '—';
+    if (r.verdict) {
+      const fallbackRec = `<span class="badge badge-consider" style="font-size:0.65rem">${escHtml(r.verdict.recommendation || '—')}</span>`;
+      recBadge = {
+        'Strong Hire': '<span class="badge badge-hire" style="font-size:0.65rem">✅ Hire</span>',
+        'Consider': '<span class="badge badge-consider" style="font-size:0.65rem">⚠️ Consider</span>',
+        'Pass': '<span class="badge badge-pass" style="font-size:0.65rem">❌ Pass</span>',
+      }[r.verdict.recommendation] || fallbackRec;
+    } else {
+      recBadge = `<button class="btn btn-secondary btn-sm" style="padding:0.15rem 0.4rem; font-size:0.65rem;" onclick="generateVerdictOnDemand(${globalIdx})">Generate</button>`;
+    }
 
     return `
       <tr>
