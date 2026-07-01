@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Layer 2: Taxonomy — RecruitIQ</title>
+  
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="stylesheet" href="hackathon-premium.css?v=19">
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="nav-logo">🎯</span>
+      <span class="nav-title">RecruitIQ</span>
+      <span class="nav-subtitle">AI Candidate Ranking Platform</span>
+    </div>
+
+    <div class="nav-links" style="display: flex; gap: 2rem; margin-left: 2.5rem; flex: 1;">
+      <a href="index.html" style="color: var(--text-primary); text-decoration: none; font-weight: 600; font-size: 0.95rem; display: flex; align-items: center; gap: 0.5rem; transition: color 0.2s;" onmouseover="this.style.color='var(--accent-teal)'" onmouseout="this.style.color='var(--text-primary)'">
+        <i data-lucide="home" style="width:18px;height:18px;"></i> Home
+      </a>
+      <a href="index.html?launch=true" style="color: var(--text-primary); text-decoration: none; font-weight: 600; font-size: 0.95rem; display: flex; align-items: center; gap: 0.5rem; transition: color 0.2s;" onmouseover="this.style.color='var(--accent-purple)'" onmouseout="this.style.color='var(--text-primary)'">
+        <i data-lucide="layout-dashboard" style="width:18px;height:18px;"></i> Evaluation
+      </a>
+    </div>
+  </nav>
+
+  <div class="landing-bg-glow" style="background: radial-gradient(circle at 50% 30%, #00d4aa20 0%, transparent 60%);"></div>
+
+  <div class="landing-container" id="layerDetailsPage" style="display:block;">
+    <div class="details-hero">
+      <div class="details-icon-wrap" style="color: #00d4aa;">
+        <i data-lucide="folder-tree" style="width:3rem;height:3rem;"></i>
+      </div>
+      <h1 class="details-title">Layer 2: Taxonomy</h1>
+      <p class="details-subtitle">Exact skill parsing, alias resolution, and fuzzy matching for technical roles.</p>
+    </div>
+
+    <div class="details-content" style="max-width: 900px; margin: 0 auto;">
+      
+      <div class="layer-stats-grid">
+        
+        <div class="stat-box" style="--stat-color: #00d4aa;">
+          <div class="stat-label">Method</div>
+          <div class="stat-value"><i data-lucide="share-2" style="width:18px;height:18px;color:#00d4aa;"></i> Alias & Fuzzy Match</div>
+        </div>
+        <div class="stat-box" style="--stat-color: #00d4aa;">
+          <div class="stat-label">Knowledge Base</div>
+          <div class="stat-value"><i data-lucide="database" style="width:18px;height:18px;color:#00d4aa;"></i> Curated Tech Taxonomy</div>
+        </div>
+        <div class="stat-box" style="--stat-color: #00d4aa;">
+          <div class="stat-label">Fuzzy Threshold</div>
+          <div class="stat-value"><i data-lucide="target" style="width:18px;height:18px;color:#00d4aa;"></i> 90% (difflib)</div>
+        </div>
+      </div>
+<div class="explainability-box">
+  <h3><i data-lucide="help-circle" style="color:#00d4aa;"></i> How is this calculated?</h3>
+  <ul class="explain-list">
+    <li>
+      <i data-lucide="check" class="check-icon" style="width:20px;height:20px;color:#00d4aa;"></i>
+      <span><strong>Alias Normalization:</strong> Automatically maps framework variations to a canonical root (e.g., mapping "React.js" or "ReactJS" simply to "React").</span>
+    </li>
+    <li>
+      <i data-lucide="check" class="check-icon" style="width:20px;height:20px;color:#00d4aa;"></i>
+      <span><strong>Abbreviation Handling:</strong> Successfully recognizes industry shorthand, linking terms like "K8s" to "Kubernetes" and "AWS Cloud" to "AWS".</span>
+    </li>
+    <li>
+      <i data-lucide="check" class="check-icon" style="width:20px;height:20px;color:#00d4aa;"></i>
+      <span><strong>Fuzzy Fallback:</strong> Uses a 90% similarity cutoff via <code>difflib</code> to gracefully catch slight typos or misspellings in candidate resumes before marking a skill as missing.</span>
+    </li>
+    <li>
+      <i data-lucide="check" class="check-icon" style="width:20px;height:20px;color:#00d4aa;"></i>
+      <span><strong>Gap Analysis:</strong> Cross-references normalized lists to explicitly isolate and report which required JD skills are missing from the profile.</span>
+    </li>
+  </ul>
+</div>
+      

@@ -190,6 +190,7 @@ function loadJd(key) {
   $('#jdText').value = jd.text;
   $('#jdSkills').value = jd.required_skills.join(', ');
   $('#requiredYears').value = jd.required_years;
+  $('#jobTitle').value = key
 }
 
 function initSliders() {
