@@ -58,7 +58,7 @@ DEFAULT_JD = "Python Backend Engineer"
 
 candidate_profiles = [
     {
-        "name": "Ananya Sharma",
+        "name": "Sheetal Bajaj",
         "resume_text": (
             "Recent computer science graduate with a passion for backend development. "
             "Proficient in Python and Django REST framework. Deployed personal projects "
@@ -75,7 +75,7 @@ candidate_profiles = [
         "github_username": "Sheetal-cell",
     },
     {
-        "name": "Rohan Mehta",
+        "name": "Rishav Kumar",
         "resume_text": (
             "Backend engineer with 2 years of professional experience. "
             "Worked extensively with Python and Django to build scalable microservices. "

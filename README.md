@@ -7,6 +7,7 @@
 ## 📋 Table of Contents
 
 - [Overview](#overview)
+- [Demo Video](#demo-video)
 - [Why RecruitIQ](#why-recruitiq)
 - [Architecture](#architecture)
 - [The 5-Layer Pipeline](#the-5-layer-pipeline)
@@ -34,6 +35,24 @@ RecruitIQ is a full-stack AI candidate ranking platform built with **FastAPI** o
 The system accepts a Job Description and a list of candidates (manual entry or PDF upload), runs all evaluations **concurrently** using `asyncio.gather`, sorts the results, flags potential hiring biases, and optionally generates **Gemini 2.5 Flash** LLM verdicts and personalised interview questions.
 
 ---
+## Demo Video
+
+Watch RecruitIQ in action:
+
+https://drive.google.com/file/d/1WrqZf_KMLUrzyxOz8Dnfuc6sVKDTg5p4/view?usp=sharing
+
+The demo showcases:
+- Resume PDF upload
+- AI-powered candidate ranking
+- 5-layer evaluation pipeline
+- GitHub behavioral analysis
+- Gemini LLM hiring verdicts
+- Interactive dashboard and charts
+ 
+Some glimpse of the project can be seen on:
+
+https://drive.google.com/drive/folders/19GklnKBKFmoealGCpI1yYjRbEdua2TKQ?usp=sharing
+
 
 ## Why RecruitIQ
 
