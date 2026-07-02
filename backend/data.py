@@ -72,7 +72,7 @@ candidate_profiles = [
             "Task Management API: Built a RESTful API using Django and PostgreSQL. "
             "Hosted on AWS EC2 with S3 for file storage. Used Docker for containerization."
         ),
-        "github_username": "",
+        "github_username": "Sheetal-cell",
     },
     {
         "name": "Rohan Mehta",
@@ -90,7 +90,7 @@ candidate_profiles = [
             "Database managed via Postgres on Amazon Web Services RDS. "
             "CI/CD pipeline set up with GitHub Actions and Docker."
         ),
-        "github_username": "",
+        "github_username": "Rishav07-05",
     },
     {
         "name": "Priya Iyer",

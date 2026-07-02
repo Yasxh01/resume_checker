@@ -328,7 +328,7 @@ Create a file named `.env` in the project root (same folder as `main.py`):
 # Without token: 60 API requests/hour (may hit limit during demos)
 # With token:  5000 API requests/hour (safe for any demo)
 # Get from: https://github.com/settings/tokens → Generate new token (classic) → public_repo scope
-GIT_HUB_API_KEY=ghp_your_token_here
+GITHUB_TOKEN=ghp_your_token_here
 
 # Required for LLM verdicts and interview question generation
 # Get from: https://aistudio.google.com
